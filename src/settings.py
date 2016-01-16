@@ -312,6 +312,8 @@ PING_IF_NUMS_ACCS = {}
 DEADCHAT_PREFS = set()
 DEADCHAT_PREFS_ACCS = set()
 
+GAME_LOGGER = None # do NOT change!
+
 is_role = lambda plyr, rol: rol in ROLES and plyr in ROLES[rol]
 
 def match_hostmask(hostmask, nick, ident, host):

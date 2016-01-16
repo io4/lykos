@@ -123,6 +123,10 @@ class IRCClient(object):
         self.command_handler = cmd_handler
         self._end = 0
 
+        # some fugly hackery
+        global var
+        import src.settings as var
+
     def send(self, *args, **kwargs):
         """ send a message to the connected server. all arguments are joined
         with a space for convenience, for example the following are identical
@@ -159,6 +163,8 @@ class IRCClient(object):
             while not self.tokenbucket.consume(1):
                 time.sleep(0.3)
             self.socket.send(msg + bytes("\r\n", "utf_8"))
+            if var.GAME_LOGGER is not None:
+                var.GAME_LOGGER.append_send(msg.decode(encoding))
 
     def connect(self):
         """ initiates the connection to the server set in self.host:self.port

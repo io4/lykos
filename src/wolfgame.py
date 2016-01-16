@@ -44,7 +44,7 @@ from oyoyo.parse import parse_nick
 import botconfig
 import src.settings as var
 from src.utilities import *
-from src import decorators, events, logger, proxy, debuglog, errlog, plog
+from src import decorators, events, logger, proxy, debuglog, errlog, plog, DebugLogger
 from src.messages import messages
 
 # done this way so that events is accessible in !eval (useful for debugging)
@@ -419,6 +419,12 @@ def reset():
     var.DISCONNECTED.clear()
     var.SPECTATING_WOLFCHAT = set()
     var.SPECTATING_DEADCHAT = set()
+
+    # handle the debug logger
+    if var.GAME_LOGGER is not None:
+        var.GAME_LOGGER.flush()
+    var.GAME_LOGGER = None # reset it
+    var.LAST_RECEIVED = None
 
 reset()
 
@@ -1178,6 +1184,9 @@ def join_player(cli, player, chan, who = None, forced = False):
 
     cmodes = [("+v", player)]
     if var.PHASE == "none":
+        var.GAME_LOGGER = DebugLogger()
+        var.GAME_LOGGER.append_receive(*var.LAST_RECEIVED)
+        var.LAST_RECEIVED = None
 
         if var.AUTO_TOGGLE_MODES and player in var.USERS and var.USERS[player]["modes"]:
             for mode in var.USERS[player]["modes"]:

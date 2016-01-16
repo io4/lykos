@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import time
+import os
 
 import botconfig
 import src.settings as var
@@ -16,7 +17,7 @@ def logger(file, write=True, display=True):
             write = True
         if botconfig.DEBUG_MODE or botconfig.VERBOSE_MODE:
             display = True
-        timestamp = get_timestamp()
+        timestamp = get_timestamp().upper() + " "
         if display:
             print(timestamp + output, file=utf8stdout)
         if write and file is not None:
@@ -30,6 +31,31 @@ stream_handler = logger(None)
 debuglog = logger("debug.log", write=False, display=False)
 errlog = logger("errors.log")
 plog = logger(None) # use this instead of print so that logs have timestamps
+
+# debug logger, full game logging. not human-readable
+
+class DebugLogger:
+    def __init__(self):
+        self.data = []
+        self.begin = get_timestamp(use_utc=True, ts_format="[%Y%m%d_%H%M%S].log").strip()
+
+    def append(self, data):
+        cur_time = get_timestamp(use_utc=True, ts_format="[%Y:%m:%d] (%H:%M:%S-%%s) (UTC+0000) :: %%s")
+        now = str(time.time())
+        micro = format(now[now.find(".")+1:], "0<7")
+        self.data.append(cur_time % (micro, data))
+
+    def flush(self):
+        try:
+            os.mkdir(os.path.join(os.getcwd(), "Debug"))
+        except OSError as e:
+            if e.errno != 17: # Py3.2- compat -- 3.3+ is FileExistsError
+                raise
+
+        with open(os.path.join(os.getcwd(), "Debug", self.begin), "x", encoding="utf-8", errors="replace") as f:
+            for line in self.data:
+                f.write(line)
+                f.write("\n")
 
 # Import the user-defined game modes
 # These are not required, so failing to import it doesn't matter
@@ -110,7 +136,7 @@ def get_timestamp(use_utc=None, ts_format=None):
         if datetime.datetime.utcnow().hour > datetime.datetime.now().hour:
             offset = "-"
         offset += str(time.timezone // 36).zfill(4)
-    return tmf.format(tzname=tz, tzoffset=offset).strip().upper() + " "
+    return tmf.format(tzname=tz, tzoffset=offset).strip()
 
 def stream(output, level="normal"):
     if botconfig.VERBOSE_MODE or botconfig.DEBUG_MODE:
