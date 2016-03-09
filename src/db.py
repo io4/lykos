@@ -123,7 +123,6 @@ def add_game(mode, size, started, finished, winner, players, options):
         p["hostmask"] = "{0}!{1}@{2}".format(p["nick"], p["ident"], p["host"])
         c = conn.cursor()
         p["personid"], p["playerid"] = _get_ids(p["account"], p["hostmask"], add=True)
-    print(players)
     with conn:
         c = conn.cursor()
         if winner.startswith("@"):
