@@ -44,7 +44,7 @@ from oyoyo.parse import parse_nick
 import botconfig
 import src.settings as var
 from src.utilities import *
-from src import decorators, events, logger, proxy, debuglog, errlog, plog
+from src import db, decorators, events, logger, proxy, debuglog, errlog, plog
 from src.messages import messages
 
 # done this way so that events is accessible in !eval (useful for debugging)
@@ -625,20 +625,20 @@ def mark_simple_notify(cli, nick, chan, rest):
     if acc: # Prioritize account
         if acc in var.SIMPLE_NOTIFY_ACCS:
             var.SIMPLE_NOTIFY_ACCS.remove(acc)
-            var.remove_simple_rolemsg_acc(acc)
+            db.toggle_simple(acc, None)
             if host in var.SIMPLE_NOTIFY:
                 var.SIMPLE_NOTIFY.remove(host)
-                var.remove_simple_rolemsg(host)
+                db.toggle_simple(None, host)
             fullmask = ident + "@" + host
             if fullmask in var.SIMPLE_NOTIFY:
                 var.SIMPLE_NOTIFY.remove(fullmask)
-                var.remove_simple_rolemsg(fullmask)
+                db.toggle_simple(None, fullmask)
 
             cli.notice(nick, messages["simple_off"])
             return
 
         var.SIMPLE_NOTIFY_ACCS.add(acc)
-        var.add_simple_rolemsg_acc(acc)
+        db.toggle_simple(acc, None)
     elif var.ACCOUNTS_ONLY:
         cli.notice(nick, messages["not_logged_in"])
         return
@@ -646,7 +646,7 @@ def mark_simple_notify(cli, nick, chan, rest):
     else: # Not logged in, fall back to ident@hostmask
         if host in var.SIMPLE_NOTIFY:
             var.SIMPLE_NOTIFY.remove(host)
-            var.remove_simple_rolemsg(host)
+            db.toggle_simple(None, host)
         
             cli.notice(nick, messages["simple_off"])
             return
@@ -654,13 +654,13 @@ def mark_simple_notify(cli, nick, chan, rest):
         fullmask = ident + "@" + host
         if fullmask in var.SIMPLE_NOTIFY:
             var.SIMPLE_NOTIFY.remove(fullmask)
-            var.remove_simple_rolemsg(fullmask)
+            db.toggle_simple(None, fullmask)
 
             cli.notice(nick, messages["simple_off"])
             return
 
         var.SIMPLE_NOTIFY.add(fullmask)
-        var.add_simple_rolemsg(fullmask)
+        db.toggle_simple(None, fullmask)
 
     cli.notice(nick, messages["simple_on"])
 
@@ -681,20 +681,20 @@ def mark_prefer_notice(cli, nick, chan, rest):
     if acc and not var.DISABLE_ACCOUNTS: # Do things by account if logged in
         if acc in var.PREFER_NOTICE_ACCS:
             var.PREFER_NOTICE_ACCS.remove(acc)
-            var.remove_prefer_notice_acc(acc)
+            db.toggle_notice(acc, None)
             if host in var.PREFER_NOTICE:
                 var.PREFER_NOTICE.remove(host)
-                var.remove_prefer_notice(host)
+                db.toggle_notice(None, host)
             fullmask = ident + "@" + host
             if fullmask in var.PREFER_NOTICE:
                 var.PREFER_NOTICE.remove(fullmask)
-                var.remove_prefer_notice(fullmask)
+                db.toggle_notice(None, fullmask)
 
             cli.notice(nick, messages["notice_off"])
             return
 
         var.PREFER_NOTICE_ACCS.add(acc)
-        var.add_prefer_notice_acc(acc)
+        db.toggle_notice(acc, None)
     elif var.ACCOUNTS_ONLY:
         cli.notice(nick, messages["not_logged_in"])
         return
@@ -702,20 +702,20 @@ def mark_prefer_notice(cli, nick, chan, rest):
     else: # Not logged in
         if host in var.PREFER_NOTICE:
             var.PREFER_NOTICE.remove(host)
-            var.remove_prefer_notice(host)
+            db.toggle_notice(None, host)
 
             cli.notice(nick, messages["notice_off"])
             return
         fullmask = ident + "@" + host
         if fullmask in var.PREFER_NOTICE:
             var.PREFER_NOTICE.remove(fullmask)
-            var.remove_prefer_notice(fullmask)
+            db.toggle_notice(None, fullmask)
 
             cli.notice(nick, messages["notice_off"])
             return
 
         var.PREFER_NOTICE.add(fullmask)
-        var.add_prefer_notice(fullmask)
+        db.toggle_notice(None, fullmask)
 
     cli.notice(nick, messages["notice_on"])
 
@@ -882,7 +882,7 @@ def toggle_altpinged_status(nick, value, old=None):
         if not var.DISABLE_ACCOUNTS and acc and acc != "*":
             if acc in var.PING_IF_PREFS_ACCS:
                 del var.PING_IF_PREFS_ACCS[acc]
-                var.set_pingif_status(acc, True, 0)
+                db.set_pingif(0, acc, None)
                 if old is not None:
                     with var.WARNING_LOCK:
                         if old in var.PING_IF_NUMS_ACCS:
@@ -891,7 +891,7 @@ def toggle_altpinged_status(nick, value, old=None):
             for hostmask in list(var.PING_IF_PREFS.keys()):
                 if var.match_hostmask(hostmask, nick, ident, host):
                     del var.PING_IF_PREFS[hostmask]
-                    var.set_pingif_status(hostmask, False, 0)
+                    db.set_pingif(0, None, hostmask)
                     if old is not None:
                         with var.WARNING_LOCK:
                             if old in var.PING_IF_NUMS.keys():
@@ -900,7 +900,7 @@ def toggle_altpinged_status(nick, value, old=None):
     else:
         if not var.DISABLE_ACCOUNTS and acc and acc != "*":
             var.PING_IF_PREFS_ACCS[acc] = value
-            var.set_pingif_status(acc, True, value)
+            db.set_pingif(value, acc, None)
             with var.WARNING_LOCK:
                 if value not in var.PING_IF_NUMS_ACCS:
                     var.PING_IF_NUMS_ACCS[value] = set()
@@ -911,7 +911,7 @@ def toggle_altpinged_status(nick, value, old=None):
         elif not var.ACCOUNTS_ONLY:
             hostmask = ident + "@" + host
             var.PING_IF_PREFS[hostmask] = value
-            var.set_pingif_status(hostmask, False, value)
+            db.set_pingif(value, None, hostmask)
             with var.WARNING_LOCK:
                 if value not in var.PING_IF_NUMS.keys():
                     var.PING_IF_NUMS[value] = set()
@@ -1107,12 +1107,12 @@ def deadchat_pref(cli, nick, chan, rest):
     if value in variable:
         msg = messages["chat_on_death"]
         variable.remove(value)
-        var.remove_deadchat_pref(value, value == acc)
+        db.toggle_deadchat(acc, host)
 
     else:
         msg = messages["no_chat_on_death"]
         variable.add(value)
-        var.add_deadchat_pref(value, value == acc)
+        db.toggle_deadchat(acc, host)
 
     reply(cli, nick, chan, msg, private=True)
 
@@ -2471,14 +2471,19 @@ def stop_game(cli, winner = "", abort = False, additional_winners = None):
     # Only update if someone actually won, "" indicates everyone died or abnormal game stop
     if winner != "":
         plrl = {}
+        pltp = defaultdict(list)
         winners = []
+        player_list = []
         if additional_winners is not None:
             winners.extend(additional_winners)
         for role,ppl in var.ORIGINAL_ROLES.items():
             if role in var.TEMPLATE_RESTRICTIONS.keys():
+                for x in ppl:
+                    if x is not None:
+                        pltp[x].append(role)
                 continue
             for x in ppl:
-                if x != None:
+                if x is not None:
                     if x in var.FINAL_ROLES:
                         plrl[x] = var.FINAL_ROLES[x]
                     else:
@@ -2486,24 +2491,42 @@ def stop_game(cli, winner = "", abort = False, additional_winners = None):
         for plr, rol in plrl.items():
             orol = rol # original role, since we overwrite rol in case of clone
             splr = plr # plr stripped of the (dced) bit at the front, since other dicts don't have that
-            # TODO: figure out how player stats should work when var.DISABLE_ACCOUNTS is True; likely track by nick
+            pentry = {"nick": None,
+                      "account": None,
+                      "ident": None,
+                      "host": None,
+                      "role": None,
+                      "templates": [],
+                      "special": [],
+                      "won": False,
+                      "iwon": False,
+                      "dced": False}
             if plr.startswith("(dced)"):
+                pentry["dced"] = True
                 splr = plr[6:]
-                if var.DISABLE_ACCOUNTS:
-                    acc = splr
-                elif splr in var.DCED_PLAYERS.keys():
-                    acc = var.DCED_PLAYERS[splr]["account"]
-                elif splr in var.PLAYERS.keys():
-                    acc = var.PLAYERS[splr]["account"]
-                else:
-                    acc = "*"
-            elif plr in var.PLAYERS.keys():
-                if var.DISABLE_ACCOUNTS:
-                    acc = plr
-                else:
-                    acc = var.PLAYERS[plr]["account"]
-            else:
-                acc = "*"  #probably fjoin'd fake
+                if splr in var.USERS:
+                    if not var.DISABLE_ACCOUNTS:
+                        pentry["account"] = var.USERS[splr]["account"]
+                    pentry["nick"] = splr
+                    pentry["ident"] = var.USERS[splr]["ident"]
+                    pentry["host"] = var.USERS[splr]["host"]
+            elif plr in var.USERS:
+                if not var.DISABLE_ACCOUNTS:
+                    pentry["account"] = var.USERS[plr]["account"]
+                pentry["nick"] = plr
+                pentry["ident"] = var.USERS[plr]["ident"]
+                pentry["host"] = var.USERS[plr]["host"]
+
+            pentry["role"] = rol
+            pentry["templates"] = pltp[plr]
+            if splr in var.LOVERS:
+                pentry["special"].append("lover")
+            if splr in var.ENTRANCED:
+                pentry["special"].append("entranced")
+            if splr in var.VENGEFUL_GHOSTS:
+                pentry["special"].append("vg activated")
+                if var.VENGEFUL_GHOSTS[splr][0] == "!":
+                    pentry["special"].append("vg driven off")
 
             won = False
             iwon = False
@@ -2603,18 +2626,31 @@ def stop_game(cli, winner = "", abort = False, additional_winners = None):
             elif not iwon:
                 iwon = won and splr in survived  # survived, team won = individual win
 
-            if acc != "*":
-                var.update_role_stats(acc, orol, won, iwon)
-                for role in var.TEMPLATE_RESTRICTIONS.keys():
-                    if plr in var.ORIGINAL_ROLES[role]:
-                        var.update_role_stats(acc, role, won, iwon)
-                if splr in var.LOVERS:
-                    var.update_role_stats(acc, "lover", won, iwon)
+            pentry["won"] = won
+            pentry["iwon"] = iwon
 
             if won or iwon:
                 winners.append(splr)
 
-        var.update_game_stats(var.CURRENT_GAMEMODE.name, len(survived) + len(var.DEAD), winner)
+            if pentry["nick"] is not None:
+                # don't record fjoined fakes
+                player_list.append(pentry)
+
+        game_options = {"role reveal": var.ROLE_REVEAL,
+                        "stats": var.STATS_TYPE,
+                        "abstain": "on" if var.ABSTAIN_ENABLED and not var.LIMIT_ABSTAIN else "restricted" if var.ABSTAIN_ENABLED else "off",
+                        "roles": {}}
+        for role,pl in var.ORIGINAL_ROLES.items():
+            if len(pl) > 0:
+                game_options["roles"][role] = len(pl)
+
+        db.add_game(var.CURRENT_GAMEMODE.name,
+                    len(survived) + len(var.DEAD),
+                    time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(var.GAME_ID)),
+                    time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
+                    winner,
+                    player_list,
+                    game_options)
 
         # spit out the list of winners
         winners.sort()
@@ -7799,13 +7835,13 @@ def fstasis(cli, nick, chan, rest):
 
                 if amt > 0:
                     var.STASISED[hostmask] = amt
-                    var.set_stasis(hostmask, amt)
+                    db.set_stasis(amt, None, hostmask)
                     plural = "" if amt == 1 else "s"
                     msg = messages["fstasis_hostmask_add"].format(data[0], hostmask, amt, plural)
                 elif amt == 0:
                     if hostmask in var.STASISED:
                         del var.STASISED[hostmask]
-                        var.set_stasis(hostmask, 0)
+                        db.set_stasis(0, None, hostmask)
                         msg = messages["fstasis_hostmask_remove"].format(data[0], hostmask)
                     else:
                         msg = messages["hostmask_not_in_stasis"].format(data[0], hostmask)
@@ -7837,13 +7873,13 @@ def fstasis(cli, nick, chan, rest):
 
                 if amt > 0:
                     var.STASISED_ACCS[acc] = amt
-                    var.set_stasis_acc(acc, amt)
+                    db.set_stasis(amt, acc, None)
                     plural = "" if amt == 1 else "s"
                     msg = messages["fstasis_account_add"].format(data[0], acc, amt, plural)
                 elif amt == 0:
                     if acc in var.STASISED_ACCS:
                         del var.STASISED_ACCS[acc]
-                        var.set_stasis_acc(acc, 0)
+                        db.set_stasis(0, acc, None)
                         msg = messages["fstasis_account_remove"].format(data[0], acc)
                     else:
                         msg = messages["account_not_in_stasis"].format(data[0], acc)
@@ -8743,10 +8779,10 @@ def game_stats(cli, nick, chan, rest):
 
     # List all games sizes and totals if no size is given
     if not gamesize:
-        reply(cli, nick, chan, var.get_game_totals(gamemode))
+        reply(cli, nick, chan, db.get_game_totals(gamemode))
     else:
         # Attempt to find game stats for the given game size
-        reply(cli, nick, chan, var.get_game_stats(gamemode, gamesize))
+        reply(cli, nick, chan, db.get_game_stats(gamemode, gamesize))
 
 @cmd("playerstats", "pstats", "player", "p", pm=True)
 def player_stats(cli, nick, chan, rest):
@@ -8775,21 +8811,25 @@ def player_stats(cli, nick, chan, rest):
     # Find the player's account if possible
     luser = user.lower()
     lusers = {k.lower(): v for k, v in var.USERS.items()}
-    if luser in lusers and not var.DISABLE_ACCOUNTS:
+    if luser in lusers:
         acc = lusers[luser]["account"]
-        if acc == "*":
+        hostmask = luser + "!" + lusers[luser]["ident"] + "@" + lusers[luser]["host"]
+        if acc == "*" and var.ACCOUNTS_ONLY:
             if luser == nick.lower():
                 cli.notice(nick, messages["not_logged_in"])
             else:
                 cli.notice(nick, messages["account_not_logged_in"].format(user))
-
             return
+    elif "@" in user:
+        acc = None
+        hostmask = user
     else:
         acc = user
+        hostmask = None
 
     # List the player's total games for all roles if no role is given
     if len(params) < 2:
-        reply(cli, nick, chan, var.get_player_totals(acc), private=True)
+        reply(cli, nick, chan, db.get_player_totals(acc, hostmask), private=True)
     else:
         role = " ".join(params[1:])
         if role not in var.ROLE_GUIDE.keys():
@@ -8799,7 +8839,7 @@ def player_stats(cli, nick, chan, rest):
                 return
             role = match
         # Attempt to find the player's stats
-        reply(cli, nick, chan, var.get_player_stats(acc, role))
+        reply(cli, nick, chan, db.get_player_stats(acc, hostmask, role))
 
 @cmd("mystats", "m", pm=True)
 def my_stats(cli, nick, chan, rest):

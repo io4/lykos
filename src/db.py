@@ -10,6 +10,7 @@ SCHEMA_VERSION = 1
 conn = None
 
 def init():
+    global conn
     need_install = not os.path.isfile("data.sqlite3")
     conn = sqlite3.connect("data.sqlite3")
     with conn:
@@ -46,19 +47,29 @@ def init():
                      WHERE pl.active = 1""")
         for (acc, host, notice, simple, dc, pi, stasis, stasisexp) in c:
             if acc is not None:
-                var.SIMPLE_NOTIFY_ACCS.add(acc) if simple == 1
-                var.PREFER_NOTICE_ACCS.add(acc) if notice == 1
-                var.STASISED_ACCS[acc] = stasis if stasis > 0
-                var.PING_IF_PREFS_ACCS[acc] = pi if pi > 0
-                var.PING_IF_NUMS_ACCS[pi].add(acc) if pi > 0
-                var.DEADCHAT_PREFS_ACCS.add(acc) if dc == 1
+                if simple == 1:
+                    var.SIMPLE_NOTIFY_ACCS.add(acc)
+                if notice == 1:
+                    var.PREFER_NOTICE_ACCS.add(acc)
+                if stasis > 0:
+                    var.STASISED_ACCS[acc] = stasis
+                if pi is not None and pi > 0:
+                    var.PING_IF_PREFS_ACCS[acc] = pi
+                    var.PING_IF_NUMS_ACCS[pi].add(acc)
+                if dc == 1:
+                    var.DEADCHAT_PREFS_ACCS.add(acc)
             elif host is not None:
-                var.SIMPLE_NOTIFY.add(host) if simple == 1
-                var.PREFER_NOTICE.add(host) if notice == 1
-                var.STASISED[host] = stasis if stasis > 0
-                var.PING_IF_PREFS[host] = pi if pi > 0
-                var.PING_IF_NUMS[pi].add(host) if pi > 0
-                var.DEADCHAT_PREFS.add(host) if dc == 1
+                if simple == 1:
+                    var.SIMPLE_NOTIFY.add(host)
+                if notice == 1:
+                    var.PREFER_NOTICE.add(host)
+                if stasis > 0:
+                    var.STASISED[host] = stasis
+                if pi is not None and pi > 0:
+                    var.PING_IF_PREFS[host] = pi
+                    var.PING_IF_NUMS[pi].add(host)
+                if dc == 1:
+                    var.DEADCHAT_PREFS.add(host)
 
 def toggle_simple(acc, hostmask):
     _toggle_thing("simple", acc, hostmask)
@@ -111,8 +122,8 @@ def add_game(mode, size, started, finished, winner, players, options):
             p["account"] = None
         p["hostmask"] = "{0}!{1}@{2}".format(p["nick"], p["ident"], p["host"])
         c = conn.cursor()
-        p["personid"], p["playerid"] = _get_ids(p["account"], p["hostmask"])
-
+        p["personid"], p["playerid"] = _get_ids(p["account"], p["hostmask"], add=True)
+    print(players)
     with conn:
         c = conn.cursor()
         if winner.startswith("@"):
@@ -148,7 +159,7 @@ def get_player_stats(acc, hostmask, role):
         return "\u0002{0}\u0002 has not played any games.".format(acc if acc and acc != "*" else hostmask)
     c = conn.cursor()
     c.execute("""SELECT
-                   gpr.role AS role
+                   gpr.role AS role,
                    SUM(gp.team_win) AS team,
                    SUM(gp.indiv_win) AS indiv,
                    COUNT(1) AS total
@@ -197,11 +208,11 @@ def get_player_totals(acc, hostmask):
     totals = ["\u0002{0}\u0002: {1}".format(r, tmp[r]) for r in order if r in tmp]
     #lover or any other special stats
     totals += ["\u0002{0}\u0002: {1}".format(r, t) for r, t in tmp.items() if r not in order]
-    return "\u0002{0}\u0002's totals | \u0002{1}\u0002 games | {2}".format(name, total_games, break_long_message(totals, ", "))
+    return "\u0002{0}\u0002's totals | \u0002{1}\u0002 games | {2}".format(name, total_games, var.break_long_message(totals, ", "))
 
 def get_game_stats(mode, size):
     c = conn.cursor()
-    c.execute("SELECT COUNT(1) FROM games WHERE gamemode = ? AND gamesize = ?", (mode, size))
+    c.execute("SELECT COUNT(1) FROM game WHERE gamemode = ? AND gamesize = ?", (mode, size))
     total_games = c.fetchone()[0]
     if not total_games:
         return "No stats for \u0002{0}\u0002 player games.".format(size)
@@ -211,8 +222,8 @@ def get_game_stats(mode, size):
                      ELSE winner END AS team,
                    COUNT(1) AS games,
                    CASE winner
-                     WHEN 'villagers' THEN 0,
-                     WHEN 'wolves' THEN 1,
+                     WHEN 'villagers' THEN 0
+                     WHEN 'wolves' THEN 1
                      ELSE 2 END AS ord
                  FROM game
                  WHERE
@@ -230,7 +241,7 @@ def get_game_stats(mode, size):
 
 def get_game_totals(mode):
     c = conn.cursor()
-    c.execute("SELECT COUNT(1) FROM games WHERE gamemode = ?", (mode,))
+    c.execute("SELECT COUNT(1) FROM game WHERE gamemode = ?", (mode,))
     total_games = c.fetchone()[0]
     if not total_games:
         return "No games have been played in the {0} game mode.".format(mode)
@@ -253,7 +264,8 @@ def _upgrade():
     pass
 
 def _migrate():
-    with conn, open("db.sql", "rt") as f1, open("migrate.sql", "rt") as f2:
+    dn = os.path.dirname(__file__)
+    with conn, open(os.path.join(dn, "db.sql"), "rt") as f1, open(os.path.join(dn, "migrate.sql"), "rt") as f2:
         c = conn.cursor()
         #######################################################
         # Step 1: install the new schema (from db.sql script) #
@@ -268,17 +280,20 @@ def _migrate():
         ######################################################################
         # Step 3: Indicate we have updated the schema to the current version #
         ######################################################################
-        c.execute("PRAGMA user_version = ?", (SCHEMA_VERSION,))
+        c.execute("PRAGMA user_version = " + str(SCHEMA_VERSION))
 
 def _install():
-    with conn, open("db.sql", "rt") as f1:
+    dn = os.path.dirname(__file__)
+    with conn, open(os.path.join(dn, "db.sql"), "rt") as f1:
         c = conn.cursor()
         c.executescript(f1.read())
-        c.execute("PRAGMA user_version = ?", (SCHEMA_VERSION,))
+        c.execute("PRAGMA user_version = " + str(SCHEMA_VERSION))
 
-def _get_ids(acc, hostmask):
+def _get_ids(acc, hostmask, add=False):
     c = conn.cursor()
-    if acc is None or acc == "*":
+    if acc == "*":
+        acc = None
+    if acc is None:
         c.execute("""SELECT pe.id, pl.id
                      FROM player pl
                      JOIN person_player pp
@@ -290,6 +305,7 @@ def _get_ids(acc, hostmask):
                        AND pl.hostmask = ?
                        AND pl.active = 1""", (hostmask,))
     else:
+        hostmask = None
         c.execute("""SELECT pe.id, pl.id
                      FROM player pl
                      JOIN person_player pp
@@ -301,9 +317,18 @@ def _get_ids(acc, hostmask):
                        AND pl.hostmask IS NULL
                        AND pl.active = 1""", (acc,))
     row = c.fetchone()
+    peid = None
+    plid = None
     if row:
-        return row
-    return (None, None)
+        peid, plid = row
+    elif add:
+        with conn:
+            c.execute("INSERT INTO player (account, hostmask) VALUES (?, ?)", (acc, hostmask))
+            plid = c.lastrowid
+            c.execute("INSERT INTO person (primary_player) VALUES (?)", (plid,))
+            peid = c.lastrowid
+            c.execute("INSERT INTO person_player (person, player) VALUES (?, ?)", (peid, plid))
+    return (peid, plid)
 
 def _get_display_name(peid):
     if peid is None:
@@ -335,44 +360,13 @@ def _total_games(peid):
 def _set_thing(thing, val, acc, hostmask, raw=False):
     with conn:
         c = conn.cursor()
-        if acc is None or acc == "*":
-            if raw:
-                params = (hostmask,)
-            else:
-                params = (hostmask, val)
-                val = "?"
-            c.execute("""WITH pmap AS (
-                           SELECT pp.person
-                           FROM player pl
-                           JOIN person_player pp
-                             ON pp.player = pl.id
-                           WHERE
-                             pl.account IS NULL
-                             AND pl.hostmask = ?
-                             AND pl.active = 1
-                         )
-                         UPDATE person
-                         SET {0} = {1}
-                         WHERE person.id = pmap.person""".format(thing, val), params)
+        peid, plid = _get_ids(acc, hostmask, add=True)
+        if raw:
+            params = (peid,)
         else:
-            if raw:
-                params = (acc,)
-            else:
-                params = (acc, val)
-                val = "?"
-            c.execute("""WITH pmap AS (
-                           SELECT pp.person
-                           FROM player pl
-                           JOIN person_player pp
-                             ON pp.player = pl.id
-                           WHERE
-                             pl.account = ?
-                             AND pl.hostmask IS NULL
-                             AND pl.active = 1
-                         )
-                         UPDATE person
-                         SET {0} = {1}
-                         WHERE person.id = pmap.person""".format(thing, val), params)
+            params = (val, peid)
+            val = "?"
+        c.execute("""UPDATE person SET {0} = {1} WHERE id = ?""".format(thing, val), params)
 
 def _toggle_thing(thing, acc, hostmask):
     _set_thing(thing, "CASE {0} WHEN 1 THEN 0 ELSE 1 END".format(thing), acc, hostmask, raw=True)
