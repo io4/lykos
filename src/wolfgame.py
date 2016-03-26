@@ -452,7 +452,7 @@ def make_stasis(nick, penalty):
             var.STASISED[hostmask] += penalty
             var.set_stasis(hostmask, var.STASISED[hostmask])
 
-@cmd("fsync", admin_only=True, pm=True)
+@cmd("fsync", flag="m", pm=True)
 def fsync(cli, nick, chan, rest):
     """Makes the bot apply the currently appropriate channel modes."""
     sync_modes(cli)
@@ -473,7 +473,7 @@ def sync_modes(cli):
     mass_mode(cli, voices, other)
 
 
-@cmd("fdie", "fbye", admin_only=True, pm=True)
+@cmd("fdie", "fbye", flag="D", pm=True)
 def forced_exit(cli, nick, chan, rest):
     """Forces the bot to close."""
 
@@ -521,7 +521,7 @@ def _restart_program(cli, mode=None):
         os.execl(python, python, *sys.argv)
 
 
-@cmd("frestart", admin_only=True, pm=True)
+@cmd("frestart", flag="D", pm=True)
 def restart_program(cli, nick, chan, rest):
     """Restarts the bot."""
 
@@ -1305,7 +1305,7 @@ def kill_join(cli, chan):
         var.AFTER_FLASTGAME = None
 
 
-@cmd("fjoin", admin_only=True)
+@cmd("fjoin", flag="A")
 def fjoin(cli, nick, chan, rest):
     """Forces someone to join a game."""
     # keep this and the event in def join() in sync
@@ -1363,7 +1363,7 @@ def fjoin(cli, nick, chan, rest):
     if fake:
         cli.msg(chan, messages["fjoin_success"].format(nick, len(var.list_players())))
 
-@cmd("fleave", "fquit", admin_only=True, pm=True, phases=("join", "day", "night"))
+@cmd("fleave", "fquit", flag="A", pm=True, phases=("join", "day", "night"))
 def fleave(cli, nick, chan, rest):
     """Forces someone to leave the game."""
 
@@ -1413,7 +1413,7 @@ def fleave(cli, nick, chan, rest):
             cli.msg(chan, messages["not_playing"].format(a))
             return
 
-@cmd("fstart", admin_only=True, phases=("join",))
+@cmd("fstart", flag="A", phases=("join",))
 def fstart(cli, nick, chan, rest):
     """Forces the game to start immediately."""
     cli.msg(botconfig.CHANNEL, messages["fstart_success"].format(nick))
@@ -2079,7 +2079,7 @@ def hurry_up(cli, gameid, change):
 
 
 
-@cmd("fnight", admin_only=True)
+@cmd("fnight", flag="d")
 def fnight(cli, nick, chan, rest):
     """Forces the day to end and night to begin."""
     if var.PHASE != "day":
@@ -2088,7 +2088,7 @@ def fnight(cli, nick, chan, rest):
         hurry_up(cli, 0, True)
 
 
-@cmd("fday", admin_only=True)
+@cmd("fday", flag="d")
 def fday(cli, nick, chan, rest):
     """Forces the night to end and the next day to begin."""
     if var.PHASE != "night":
@@ -3457,7 +3457,7 @@ def goat(cli, nick, chan, rest):
 
     var.GOATED = True
 
-@cmd("fgoat", admin_only=True)
+@cmd("fgoat", flag="j")
 def fgoat(cli, nick, chan, rest):
     """Forces a goat to interact with anyone or anything, without limitations."""
     nick_ = rest.split(' ')[0].strip()
@@ -7778,7 +7778,7 @@ def on_error(cli, pfx, msg):
     elif msg.startswith("Closing Link:"):
         raise SystemExit
 
-@cmd("fstasis", admin_only=True, pm=True)
+@cmd("fstasis", flag="A", pm=True)
 def fstasis(cli, nick, chan, rest):
     """Removes or sets stasis penalties."""
 
@@ -7923,272 +7923,6 @@ def is_user_stasised(nick):
            amount = max(amount, var.STASISED[hostmask])
     return amount
 
-def allow_deny(cli, nick, chan, rest, mode):
-    data = rest.split()
-    msg = None
-
-    modes = ("allow", "deny")
-    assert mode in modes, "mode not in {!r}".format(modes)
-
-    opts = defaultdict(bool)
-
-    if data and data[0].startswith("-"):
-        if data[0] == "-cmds":
-            opts["cmds"] = True
-        elif data[0] == "-cmd":
-            if len(data) < 2:
-                if chan == nick:
-                    pm(cli, nick, messages["no_command_specified"])
-                else:
-                    cli.notice(nick, messages["no_command_specified"])
-
-                return
-
-            opts["cmd"] = data[1]
-            data = data[1:]
-        elif data[0] == "-acc" or data[0] == "-account":
-            opts["acc"] = True
-        elif data[0] == "-host":
-            opts["host"] = True
-        else:
-            if chan == nick:
-                pm(cli, nick, messages["invalid_option"].format(data[0][1:]))
-            else:
-                cli.notice(nick, messages["invalid_option"].format(data[0][1:]))
-
-            return
-
-        data = data[1:]
-
-    if data and not opts["cmd"]:
-        lusers = {k.lower(): v for k, v in var.USERS.items()}
-        user = data[0]
-
-        if opts["acc"] and user != "*":
-            hostmask = None
-            acc = user
-        elif not opts["host"] and user.lower() in lusers:
-            ident = lusers[user.lower()]["ident"]
-            host = lusers[user.lower()]["host"]
-            acc = lusers[user.lower()]["account"]
-            hostmask = ident + "@" + host
-        else:
-            hostmask = user
-            m = re.match('(?:(?:(.*?)!)?(.*)@)?(.*)', hostmask)
-            user = m.group(1) or ""
-            ident = m.group(2) or ""
-            host = m.group(3)
-            acc = None
-
-        if user == "*":
-            opts["host"] = True
-
-        if not var.DISABLE_ACCOUNTS and acc:
-            if mode == "allow":
-                variable = var.ALLOW_ACCOUNTS
-                noaccvar = var.ALLOW
-            else:
-                variable = var.DENY_ACCOUNTS
-                noaccvar = var.DENY
-            if len(data) == 1:
-                cmds = set()
-                if acc in variable:
-                    cmds |= set(variable[acc])
-
-                if hostmask and not opts["acc"]:
-                    for mask in noaccvar:
-                        if var.match_hostmask(mask, user, ident, host):
-                            cmds |= set(noaccvar[mask])
-
-                if cmds:
-                    msg = "\u0002{0}\u0002 (Account: {1}) is {2} the following {3}commands: {4}.".format(
-                        data[0], acc, "allowed" if mode == "allow" else "denied", "special " if mode == "allow" else "", ", ".join(cmds))
-                else:
-                    msg = "\u0002{0}\u0002 (Account: {1}) is not {2} commands.".format(data[0], acc, "allowed any special" if mode == "allow" else "denied any")
-            else:
-                if acc not in variable:
-                    variable[acc] = set()
-                commands = data[1:]
-                for command in commands: # Add or remove commands one at a time to a specific account
-                    if "-*" in commands: # Remove all
-                        for cmd in variable[acc]:
-                            if mode == "allow":
-                                var.remove_allow_acc(acc, cmd)
-                            else:
-                                var.remove_deny_acc(acc, cmd)
-                        del variable[acc]
-                        break
-                    if command[0] == "-": # Starting with - (to remove)
-                        rem = True
-                        command = command[1:]
-                    else:
-                        rem = False
-                    if command.startswith(botconfig.CMD_CHAR): # ignore command prefix
-                        command = command[len(botconfig.CMD_CHAR):]
-
-                    if not rem:
-                        if command in COMMANDS and command not in ("fdeny", "fallow", "fsend", "exec", "eval") and command not in variable[acc]:
-                            variable[acc].add(command)
-                            if mode == "allow":
-                                var.add_allow_acc(acc, command)
-                            else:
-                                var.add_deny_acc(acc, command)
-                    elif command in variable[acc]:
-                        variable[acc].remove(command)
-                        if mode == "allow":
-                            var.remove_allow_acc(acc, command)
-                        else:
-                            var.remove_deny_acc(acc, command)
-                if acc in variable and variable[acc]:
-                    msg = "\u0002{0}\u0002 (Account: {1}) is now {2} the following {3}commands: {4}{5}.".format(
-                        data[0], acc, "allowed" if mode == "allow" else "denied", "special " if mode == "allow" else "", botconfig.CMD_CHAR, ", {0}".format(botconfig.CMD_CHAR).join(variable[acc]))
-                else:
-                    if acc in variable:
-                        del variable[acc]
-                    msg = "\u0002{0}\u0002 (Account: {1}) is no longer {2} commands.".format(data[0], acc, "allowed any special" if mode == 'allow' else "denied any")
-        elif var.ACCOUNTS_ONLY and not opts["host"]:
-            msg = "Error: \u0002{0}\u0002 is not logged in to NickServ.".format(data[0])
-        else:
-            if mode == "allow":
-                variable = var.ALLOW
-            else:
-                variable = var.DENY
-            if len(data) == 1: # List commands for a specific hostmask
-                cmds = []
-                for mask in variable:
-                    if var.match_hostmask(mask, user, ident, host):
-                        cmds.extend(variable[mask])
-
-                if cmds:
-                    msg = "\u0002{0}\u0002 (Host: {1}) is {2} the following {3}commands: {4}.".format(
-                        data[0], hostmask, "allowed" if mode == "allow" else "denied", "special " if mode == "allow" else "", ", ".join(cmds))
-                else:
-                    msg = "\u0002{0}\u0002 (Host: {1}) is not {2} commands.".format(data[0], hostmask, "allowed any special" if mode == "allow" else "denied any")
-            else:
-                if hostmask not in variable:
-                    variable[hostmask] = set()
-                commands = data[1:]
-                for command in commands: #add or remove commands one at a time to a specific hostmask
-                    if "-*" in commands: # Remove all
-                        for cmd in variable[hostmask]:
-                            if mode == "allow":
-                                var.remove_allow(hostmask, cmd)
-                            else:
-                                var.remove_deny(hostmask, cmd)
-                        del variable[hostmask]
-                        break
-                    if command[0] == '-': #starting with - removes
-                        rem = True
-                        command = command[1:]
-                    else:
-                        rem = False
-                    if command.startswith(botconfig.CMD_CHAR): #ignore command prefix
-                        command = command[len(botconfig.CMD_CHAR):]
-
-                    if not rem:
-                        if command in COMMANDS and command not in ("fdeny", "fallow", "fsend", "exec", "eval") and command not in variable[hostmask]:
-                            variable[hostmask].add(command)
-                            if mode == "allow":
-                                var.add_allow(hostmask, command)
-                            else:
-                                var.add_deny(hostmask, command)
-                    elif command in variable[hostmask]:
-                        variable[hostmask].remove(command)
-                        if mode == "allow":
-                            var.remove_allow(hostmask, command)
-                        else:
-                            var.remove_deny(hostmask, command)
-
-                if hostmask in variable and variable[hostmask]:
-                    msg = "\u0002{0}\u0002 (Host: {1}) is now {2} the following {3}commands: {4}{5}.".format(
-                        data[0], hostmask, "allowed" if mode == "allow" else "denied", "special " if mode == "allow" else "", botconfig.CMD_CHAR, ", {0}".format(botconfig.CMD_CHAR).join(variable[hostmask]))
-                else:
-                    if hostmask in variable:
-                        del variable[hostmask]
-                    msg = "\u0002{0}\u0002 (Host: {1}) is no longer {2} commands.".format(data[0], hostmask, "allowed any special" if mode == "allow" else "denied any")
-
-    else:
-        users_to_cmds = {}
-        if not var.DISABLE_ACCOUNTS and not opts["host"]:
-            if mode == "allow":
-                variable = var.ALLOW_ACCOUNTS
-                noaccvar = var.ALLOW
-            else:
-                variable = var.DENY_ACCOUNTS
-                noaccvar = var.DENY
-
-            if variable:
-                for acc, varied in variable.items():
-                    if opts["acc"] or (var.ACCOUNTS_ONLY and not noaccvar):
-                        users_to_cmds[acc] = sorted(varied, key=str.lower)
-                    else:
-                        users_to_cmds[acc+" (Account)"] = sorted(varied, key=str.lower)
-        if not opts["acc"]:
-            if mode == "allow":
-                variable = var.ALLOW
-            else:
-                variable = var.DENY
-            if variable:
-                for hostmask, varied in variable.items():
-                    if var.DISABLE_ACCOUNTS or opts["host"]:
-                        users_to_cmds[hostmask] = sorted(varied, key=str.lower)
-                    else:
-                        users_to_cmds[hostmask+" (Host)"] = sorted(varied, key=str.lower)
-
-
-        if not users_to_cmds: # Deny or Allow list is empty
-            msg = "Nobody is {0} commands.".format("allowed any special" if mode == "allow" else "denied any")
-        else:
-            if opts["cmds"] or opts["cmd"]:
-                cmds_to_users = defaultdict(list)
-
-                for user in sorted(users_to_cmds, key=str.lower):
-                    for cmd in users_to_cmds[user]:
-                        cmds_to_users[cmd].append(user)
-
-                if opts["cmd"]:
-                    cmd = opts["cmd"]
-                    users = cmds_to_users[cmd]
-
-                    if cmd not in COMMANDS:
-                        if chan == nick:
-                            pm(cli, nick, messages["command_does_not_exist"])
-                        else:
-                            cli.notice(nick, messages["command_does_not_exist"])
-
-                        return
-
-                    if users:
-                        msg = "\u0002{0}{1}\u0002 is {2} to the following people: {3}".format(
-                            botconfig.CMD_CHAR, opts["cmd"], "allowed" if mode == "allow" else "denied", ", ".join(users))
-                    else:
-                        msg = "\u0002{0}{1}\u0002 is not {2} to any special people.".format(
-                            botconfig.CMD_CHAR, opts["cmd"], "allowed" if mode == "allow" else "denied")
-                else:
-                    msg = "{0}: {1}".format("Allowed" if mode == "allow" else "Denied", "; ".join("\u0002{0}\u0002 ({1})".format(
-                        cmd, ", ".join(users)) for cmd, users in sorted(cmds_to_users.items(), key=lambda t: t[0].lower())))
-            else:
-                msg = "{0}: {1}".format("Allowed" if mode == "allow" else "Denied", "; ".join("\u0002{0}\u0002 ({1})".format(
-                    user, ", ".join(cmds)) for user, cmds in sorted(users_to_cmds.items(), key=lambda t: t[0].lower())))
-
-    if msg:
-        msg = var.break_long_message(msg.split("; "), "; ")
-
-        if chan == nick:
-            pm(cli, nick, msg)
-        else:
-            cli.msg(chan, msg)
-
-@cmd("fallow", admin_only=True, pm=True)
-def fallow(cli, nick, chan, rest):
-    """Allow someone to use an admin command."""
-    allow_deny(cli, nick, chan, rest, "allow")
-
-@cmd("fdeny", admin_only=True, pm=True)
-def fdeny(cli, nick, chan, rest):
-    """Deny someone from using a command."""
-    allow_deny(cli, nick, chan, rest, "deny")
-
 @cmd("wait", "w", playing=True, phases=("join",))
 def wait(cli, nick, chan, rest):
     """Increases the wait time until !start can be used."""
@@ -8220,7 +7954,7 @@ def wait(cli, nick, chan, rest):
         cli.msg(chan, messages["wait_time_increase"].format(nick, var.EXTRA_WAIT))
 
 
-@cmd("fwait", admin_only=True, phases=("join",))
+@cmd("fwait", flag="A", phases=("join",))
 def fwait(cli, nick, chan, rest):
     """Forces an increase (or decrease) in wait time. Can be used with a number of seconds to wait."""
 
@@ -8247,7 +7981,7 @@ def fwait(cli, nick, chan, rest):
         cli.msg(chan, messages["forced_wait_time_decrease"].format(nick, abs(extra), "s" if extra != -1 else ""))
 
 
-@cmd("fstop", admin_only=True, phases=("join", "day", "night"))
+@cmd("fstop", flag="A", phases=("join", "day", "night"))
 def reset_game(cli, nick, chan, rest):
     """Forces the game to stop."""
     if nick == "<stderr>":
@@ -8315,13 +8049,13 @@ def get_help(cli, rnick, chan, rest):
 
     # if command was not found, or if no command was given:
     for name, fn in COMMANDS.items():
-        if (name and not fn[0].admin_only and not fn[0].owner_only and
+        if (name and not fn[0].flag and not fn[0].owner_only and
             name not in fn[0].aliases and fn[0].chan):
             fns.append("{0}{1}{0}".format("\u0002", name))
     afns = []
     if is_admin(nick, ident, host):
         for name, fn in COMMANDS.items():
-            if fn[0].admin_only and name not in fn[0].aliases:
+            if fn[0].flag and name not in fn[0].aliases:
                 afns.append("{0}{1}{0}".format("\u0002", name))
     fns.sort() # Output commands in alphabetical order
     if chan == nick:
@@ -8384,7 +8118,7 @@ def on_invite(cli, raw_nick, something, chan):
     else:
         pm(cli, parse_nick(nick)[0], messages["not_an_admin"])
 
-@cmd("fpart", raw_nick=True, admin_only=True, pm=True)
+@cmd("fpart", raw_nick=True, flag="A", pm=True)
 def fpart(cli, rnick, chan, rest):
     """Makes the bot forcibly leave a channel."""
     nick = parse_nick(rnick)[0]
@@ -8693,7 +8427,7 @@ def myrole(cli, nick, chan, rest):
         message += "."
         pm(cli, nick, message)
 
-@cmd("faftergame", admin_only=True, raw_nick=True, pm=True)
+@cmd("faftergame", flag="D", raw_nick=True, pm=True)
 def aftergame(cli, rawnick, chan, rest):
     """Schedule a command to be run after the current game."""
     nick = parse_nick(rawnick)[0]
@@ -8727,7 +8461,7 @@ def aftergame(cli, rawnick, chan, rest):
     var.AFTER_FLASTGAME = do_action
 
 
-@cmd("flastgame", admin_only=True, raw_nick=True, pm=True)
+@cmd("flastgame", flag="D", raw_nick=True, pm=True)
 def flastgame(cli, rawnick, chan, rest):
     """Disables starting or joining a game, and optionally schedules a command to run after the current game ends."""
     nick, _, ident, host = parse_nick(rawnick)
@@ -8907,7 +8641,7 @@ def vote(cli, nick, chan, rest):
     else:
         return show_votes.caller(cli, nick, chan, rest)
 
-@cmd("fpull", admin_only=True, pm=True)
+@cmd("fpull", flag="D", pm=True)
 def fpull(cli, nick, chan, rest):
     """Pulls from the repository to update the bot."""
 
@@ -8939,7 +8673,7 @@ def fpull(cli, nick, chan, rest):
             else:
                 pm(cli, nick, messages["process_exited"] % (command, cause, ret))
 
-@cmd("fsend", admin_only=True, pm=True)
+@cmd("fsend", flag="F", pm=True)
 def fsend(cli, nick, chan, rest):
     """Forcibly send raw IRC commands to the server."""
     cli.send(rest)
@@ -8974,12 +8708,12 @@ def _say(cli, raw_nick, rest, command, action=False):
     cli.send("PRIVMSG {0} :{1}".format(target, message))
 
 
-@cmd("fsay", admin_only=True, raw_nick=True, pm=True)
+@cmd("fsay", flag="s", raw_nick=True, pm=True)
 def fsay(cli, raw_nick, chan, rest):
     """Talk through the bot as a normal message."""
     _say(cli, raw_nick, rest, "fsay")
 
-@cmd("fact", "fdo", "fme", admin_only=True, raw_nick=True, pm=True)
+@cmd("fact", "fdo", "fme", flag="s", raw_nick=True, pm=True)
 def fact(cli, raw_nick, chan, rest):
     """Act through the bot as an action."""
     _say(cli, raw_nick, rest, "fact", action=True)
@@ -9006,7 +8740,7 @@ def can_run_restricted_cmd(nick):
 
     return True
 
-@cmd("fspectate", admin_only=True, pm=True, phases=("day", "night"))
+@cmd("fspectate", flag="A", pm=True, phases=("day", "night"))
 def fspectate(cli, nick, chan, rest):
     """Spectate wolfchat or deadchat."""
     if not can_run_restricted_cmd(nick):
@@ -9072,7 +8806,7 @@ if botconfig.DEBUG_MODE or botconfig.ALLOWED_NORMAL_MODE_COMMANDS:
         except Exception as e:
             cli.msg(chan, str(type(e))+":"+str(e))
 
-    @cmd("revealroles", admin_only=True, pm=True, phases=("day", "night"))
+    @cmd("revealroles", flag="a", pm=True, phases=("day", "night"))
     def revealroles(cli, nick, chan, rest):
         """Reveal role information."""
 
@@ -9181,7 +8915,7 @@ if botconfig.DEBUG_MODE or botconfig.ALLOWED_NORMAL_MODE_COMMANDS:
                 cli.notice(nick, var.break_long_message(output, " | "))
 
 
-    @cmd("fgame", admin_only=True, raw_nick=True, phases=("join",))
+    @cmd("fgame", flag="d", raw_nick=True, phases=("join",))
     def fgame(cli, nick, chan, rest):
         """Force a certain game mode to be picked. Disable voting for game modes upon use."""
         nick = parse_nick(nick)[0]
@@ -9230,7 +8964,7 @@ if botconfig.DEBUG_MODE or botconfig.ALLOWED_NORMAL_MODE_COMMANDS:
 
 
     # DO NOT MAKE THIS A PMCOMMAND ALSO
-    @cmd("force", admin_only=True)
+    @cmd("force", flag="d")
     def force(cli, nick, chan, rest):
         """Force a certain player to use a specific command."""
         rst = re.split(" +",rest)
@@ -9259,7 +8993,7 @@ if botconfig.DEBUG_MODE or botconfig.ALLOWED_NORMAL_MODE_COMMANDS:
             for fn in COMMANDS[comm]:
                 if fn.owner_only:
                     continue
-                if fn.admin_only and nick in var.USERS and not is_admin(nick):
+                if fn.flag and nick in var.USERS and not is_admin(nick):
                     # Not a full admin
                     cli.notice(nick, messages["admin_only_force"])
                     continue
@@ -9273,7 +9007,7 @@ if botconfig.DEBUG_MODE or botconfig.ALLOWED_NORMAL_MODE_COMMANDS:
             cli.msg(chan, messages["command_not_found"])
 
 
-    @cmd("rforce", admin_only=True)
+    @cmd("rforce", flag="d")
     def rforce(cli, nick, chan, rest):
         """Force all players of a given role to perform a certain action."""
         rst = re.split(" +",rest)
@@ -9299,7 +9033,7 @@ if botconfig.DEBUG_MODE or botconfig.ALLOWED_NORMAL_MODE_COMMANDS:
             for fn in COMMANDS[comm]:
                 if fn.owner_only:
                     continue
-                if fn.admin_only and nick in var.USERS and not is_admin(nick):
+                if fn.flag and nick in var.USERS and not is_admin(nick):
                     # Not a full admin
                     cli.notice(nick, messages["admin_only_force"])
                     continue
@@ -9314,7 +9048,7 @@ if botconfig.DEBUG_MODE or botconfig.ALLOWED_NORMAL_MODE_COMMANDS:
 
 
 
-    @cmd("frole", admin_only=True, phases=("day", "night"))
+    @cmd("frole", flag="d", phases=("day", "night"))
     def frole(cli, nick, chan, rest):
         """Change the role or template of a player."""
         rst = re.split(" +",rest)

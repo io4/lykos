@@ -66,12 +66,12 @@ class handle_error:
                         cli.msg(botconfig.DEV_CHANNEL, " ".join((msg, url)))
 
 class cmd:
-    def __init__(self, *cmds, raw_nick=False, admin_only=False, owner_only=False,
+    def __init__(self, *cmds, raw_nick=False, flag=None, owner_only=False,
                  chan=True, pm=False, playing=False, silenced=False, phases=(), roles=()):
 
         self.cmds = cmds
         self.raw_nick = raw_nick
-        self.admin_only = admin_only
+        self.flag = flag
         self.owner_only = owner_only
         self.chan = chan
         self.pm = pm
@@ -88,7 +88,7 @@ class cmd:
         for name in cmds:
             for func in COMMANDS[name]:
                 if (func.owner_only != owner_only or
-                    func.admin_only != admin_only):
+                    func.flag != flag):
                     raise ValueError("unmatching protection levels for " + func.name)
 
             COMMANDS[name].append(self)
@@ -123,7 +123,7 @@ class cmd:
         if not self.chan and chan != nick:
             return # channel command, not allowed
 
-        if chan.startswith("#") and chan != botconfig.CHANNEL and not (self.admin_only or self.owner_only):
+        if chan.startswith("#") and chan != botconfig.CHANNEL and not (self.flag or self.owner_only):
             if "" in self.cmds:
                 return # don't have empty commands triggering in other channels
             for command in self.cmds:
@@ -185,7 +185,7 @@ class cmd:
             return
 
         if var.is_admin(nick, ident, host):
-            if self.admin_only:
+            if self.flag:
                 adminlog(chan, rawnick, self.name, rest)
             return self.func(*largs)
 
@@ -202,7 +202,7 @@ class cmd:
             if acc in var.ALLOW_ACCOUNTS:
                 for command in self.cmds:
                     if command in var.ALLOW_ACCOUNTS[acc]:
-                        if self.admin_only:
+                        if self.flag:
                             adminlog(chan, rawnick, self.name, rest)
                         return self.func(*largs)
 
@@ -221,11 +221,11 @@ class cmd:
                 if var.match_hostmask(pattern, nick, ident, host):
                     for command in self.cmds:
                         if command in var.ALLOW[pattern]:
-                            if self.admin_only:
+                            if self.flag:
                                 adminlog(chan, rawnick, self.name, rest)
                             return self.func(*largs)
 
-        if self.admin_only:
+        if self.flag:
             if chan == nick:
                 pm(cli, nick, messages["not_an_admin"])
             else:
